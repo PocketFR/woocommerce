@@ -128,39 +128,55 @@ class WC_Gateway_Lydia_Payment_Gateway extends WC_Payment_Gateway { // Setup our
 		);
 
 		$param = array(
-			'order_ref'			=> $order_id,
-			'amount'			=> $this->get_order_total($customer_order),
-			'vendor_token'		=> $this->public_token,
-			'expire_time'		=> ($this->expire_time == 0 ? 300 : $this->expire_time),
-			'success_url'		=> $this->get_return_url($customer_order),
-			'confirm_url'		=> $confirmUrl,
-			//'cancel_url'		=> $callBackUrl.'&action=cancel',
-			//'expire_url'		=> $callBackUrl.'&action=expire',
-			'notify_payer'		=> 'no',
-			'notify_collector'	=> 'no',
-			'display_conf'		=> 'no',
+			'order_ref'				=> 'WC'.$order_id,
+			'amount'				=> $this->get_order_total($customer_order),
+			'vendor_token'			=> $this->public_token,
+			'expire_time'			=> ($this->expire_time == 0 ? 300 : $this->expire_time),
+			'browser_success_url'	=> $this->get_return_url($customer_order),
+			'confirm_url'			=> $confirmUrl,
+			//'cancel_url'			=> $callBackUrl.'&action=cancel',
+			//'expire_url'			=> $callBackUrl.'&action=expire',
+			'notify'				=> 'no',
+			'notify_collector'		=> 'no',
+			'display_confirmation'	=> 'yes',
+			'payment_method'		=> 'auto',
+			'currency'				=> 'EUR',
+			'type'					=> 'email'
 		);
 
     
 		$order = new WC_Order($order_id);
-		$phone = $order->billing_phone;
-		if ($phone) {
+		$phone = $order->get_billing_phone();
+		$email = $order->get_billing_email();
+		if ($email) {
+			$param['recipient'] = $email;
+			$param['type'] = 'email';
+		} elseif ($phone) {
 			$param['recipient'] = $phone;
+			$param['type'] = 'phone';
 		}
 
-		$woocommerce->cart->empty_cart();
-
-		ksort($param);
-		$sig = array();
-		foreach ($param as $key => $val) {
-			$sig[] = $key.'='.urlencode($val);
+		$url = $this->_getBaseUrl().'/api/request/do.json';
+		$cURLConnection = curl_init($url);
+		curl_setopt($cURLConnection, CURLOPT_POSTFIELDS, $param);
+		curl_setopt($cURLConnection, CURLOPT_RETURNTRANSFER, true);
+		$lydia_return = curl_exec($cURLConnection);
+		curl_close($cURLConnection);
+		
+		if ($lydia_return !== FALSE) {
+			$lydia_return = json_decode($lydia_return, true);
+			if ($lydia_return["error"] == "0") {
+				$woocommerce->cart->empty_cart();
+				return array(
+						'result'	=> 'success',
+						'redirect'	=> $lydia_return["mobile_url"]
+				);
+			}
 		}
-
-		$callSig = md5(implode('&', $sig).'&'.$this->private_token);
-		$url = $this->_getBaseUrl().'/ecommerce/payment/phoneform?'.implode('&', $sig).'&sig='.$callSig;
+		
 		return array(
-				'result'	=> 'success',
-				'redirect'	=> $url
+				'result'	=> 'failed',
+				'redirect'	=> ''
 		);
 
 	}
